@@ -10,125 +10,139 @@ emotion:
     兴奋: [0.7,0.05,0.01,0.08,0,0.02,0.3,0.18]
     正常: [0.08,0.03,0.03,0.01,0.01,0.03,0.01,0.35]
     犹豫: [0.02,0.02,0.18,0.55,0.02,0.45,0.5,0.02]
-    困惑: [0.01,0.08,0.12,0.35,0.03,0.55,0.35,0.01]
   alpha:
-    压迫性: 0.48
-    不耐烦: 0.62
-    犹豫: 0.68
-    正常: 0.35
-    兴奋: 0.55
-    愤怒: 0.37
-    恐慌: 0.5
-    困惑: 0.35
+    压迫性: 0.55
+    不耐烦: 0.65
+    犹豫: 0.6
+    正常: 0.32
+    兴奋: 0.58
+    愤怒: 0.52
+    恐慌: 0.6
   semantic:
     不耐烦:
       desc: 急躁催促
-      prompt: 说话者明显不耐烦，句子更短更直接，语速偏快，语气急切强硬，常用推进式表达（如“行了”“别绕了”“直接说重点”），几乎不给对方解释空间，表达带催促与压迫感。
+      prompt: 说话者明显不耐烦，句子短而直接，语速偏快，语气急切强硬，常用推进式表达（如“行了”“别绕了”“直接说重点”），几乎不给对方解释空间，重音落在“现在/马上/立刻”上。
     压迫性:
       desc: 稳定施压
-      prompt: 说话者语气低沉而强势，说话节奏稳定，持续给对方心理压力。
+      prompt: 语气低沉而强势，节奏稳定、持续施压，句尾收得更硬更短，重音落在“必须/立刻/配合”等指令词上，语气压低，少上扬。
     犹豫:
       desc: 真实犹豫
-      prompt: 说话者在犹豫和思考，表达会吞吐、会轻微自我修正（说到一半改口），会使用少量填充词（如“嗯…那个…”），停顿自然但不夸张。省略号处要有尾音的延续和拖住，而不是完全断开。
+      prompt: 说话者在犹豫和思考，表达会吞吐、会轻微自我修正（说到一半改口），会使用少量填充词（如“嗯…那个…”），停顿自然但不夸张，语尾轻微上扬表示不确定。
     恐慌:
       desc: 紧张失控边缘
-      prompt: 声音紧张，呼吸略急，说话不够连贯，情绪明显紧张但仍可表达。
+      prompt: 声音紧张，呼吸略急，话语不够连贯但仍可表达，句子更碎、短停顿更多，语尾偶尔上扬。
     愤怒:
       desc: 压抑的愤怒
-      prompt: 语气明显强硬，情绪愤怒但被压制，没有歇斯底里，语速偏快但不抢话，句与句之间保持控制感。
+      prompt: 语气明显强硬，情绪愤怒但被压制，没有歇斯底里，语速偏快但不抢话，句尾更重、更短促，情绪集中在关键指责词上。
     兴奋:
       desc: 情绪上扬
-      prompt: 语气略有上扬，说话节奏加快，情绪积极但不过度。
+      prompt: 语气略有上扬，说话节奏加快，情绪积极但不过度，语气更明亮，短句更利落。
     正常:
       desc: 中性自然
-      prompt: 保持自然、平稳的说话语气。
+      prompt: 保持自然、平稳的说话语气，节奏均匀，情绪起伏不明显。
+
   rhythm_templates:
     正常:
       desc: 中性自然
       rules: []
-    困惑:
-      desc: 轻微疑惑，不夸张
-      rules:
-      - pattern: (什么|怎么|为什么|是不是)
-        replace: \1……
-        count: 1
     不耐烦:
       desc: 语速偏快、句子更短更硬、推进对话，不给太多解释空间
       rules:
-      - pattern: 。{2,}
-        replace: 。
-        count: 2
-      - pattern: 。$
-        replace: ！
-        count: 1
-        prob: 0.65
-      - pattern: ，{2,}
-        replace: ，
-        count: 2
-      - pattern: ^
-        replace: 快点，
-        count: 1
-        prob: 0.22
-      - pattern: ^(哎呀)
-        replace: \1！
-        count: 1
+        - desc: 去掉多余拖尾，显得更急
+          pattern: ……{1,}
+          replace: …
+          count: 2
+        - pattern: 。{2,}
+          replace: 。
+          count: 2
+        - pattern: 。$
+          replace: ！
+          count: 1
+          prob: 0.65
+        - pattern: ，{2,}
+          replace: ，
+          count: 2
+        - pattern: ^
+          replace: 快点，
+          count: 1
+          prob: 0.22
+        - pattern: ^(哎呀)
+          replace: \1！
+          count: 1
     压迫性:
+      desc: 指令强势、持续施压
       rules:
-      - desc: 去掉感叹号前的停顿，使其语气更生硬
-        pattern: ([！!])
-        replace: ！
-        prob: 1.0
-      - desc: 在指令性动词后紧跟内容，不留空隙
-        pattern: (请务必|立刻|马上|配合)([，, ]?)
-        replace: \1
-        prob: 0.9
+        - desc: 语气更硬，减少问号
+          pattern: ？$
+          replace: 。
+          count: 1
+        - desc: 去掉感叹号前的停顿，使其语气更生硬
+          pattern: ([！!])
+          replace: ！
+          prob: 1.0
+        - desc: 在指令性动词后紧跟内容，不留空隙
+          pattern: (请务必|立刻|马上|配合|必须)([，, ]?)
+          replace: \1
+          prob: 0.9
     犹豫:
       desc: 更明显的思考与吞吐，带少量自我修正和尾音拖住
       rules:
-      - pattern: ^
-        replace: 嗯……
-        count: 1
-        prob: 0.28
-      - pattern: (但是|不过|其实|可能|这个)
-        replace: \1……
-        count: 2
-      - pattern: (我觉得|我想|应该|大概)([，。])
-        replace: \1……\2
-        count: 2
-      - pattern: 。$
-        replace: ……
-        count: 1
-        prob: 0.75
-      - pattern: ^(?!.*我(?:…|\.{3,})+我)\s*我
-        replace: 我……我
-        count: 1
+        - pattern: ^
+          replace: 嗯……
+          count: 1
+          prob: 0.28
+        - pattern: (但是|不过|其实|可能|这个)
+          replace: \1……
+          count: 2
+        - pattern: (我觉得|我想|应该|大概)([，。])
+          replace: \1……\2
+          count: 2
+        - pattern: 。$
+          replace: ……
+          count: 1
+          prob: 0.75
+        - pattern: ^(?!.*我(?:…|\.{3,})+我)\s*我
+          replace: 我……我
+          count: 1
     愤怒:
       desc: 压着的愤怒，而非失控
       rules:
-      - pattern: 。$
-        replace: ！
-        count: 1
+        - pattern: 。$
+          replace: ！
+          count: 1
+        - desc: 重音更硬，短促
+          pattern: ，
+          replace: ，
+          count: 2
     恐慌:
       desc: 紧张但不破碎
       rules:
-      - pattern: 我
-        replace: 我……
-        count: 1
+        - pattern: 我
+          replace: 我……
+          count: 1
+        - desc: 句子切碎些
+          pattern: ([，。])
+          replace: …\1
+          count: 1
+        - desc: 结尾不安
+          pattern: 。$
+          replace: ……。
+          count: 1
     兴奋:
       desc: 情绪上扬但不过度
       rules:
-      - pattern: 。
-        replace: ！
-        count: 1
-      - pattern: ？
-        replace: ！
-        count: 1
-      - pattern: 是这样的，
-        replace: 是这样的！
-        count: 1
-      - pattern: 真的假的啊
-        replace: 真的假的啊！
-        desc: 加强兴奋语气
+        - pattern: 。
+          replace: ！
+          count: 1
+        - pattern: ？
+          replace: ！
+          count: 1
+        - pattern: 是这样的，
+          replace: 是这样的！
+          count: 1
+        - pattern: 真的假的啊
+          replace: 真的假的啊！
+          desc: 加强兴奋语气
 speech_rate:
   speed_factor:
     语速加快: 1.02
