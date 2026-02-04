@@ -87,13 +87,18 @@ emotion:
     犹豫:
       desc: 更明显的思考与吞吐，带少量自我修正和尾音拖住
       rules:
-        - pattern: ^
+        - desc: 首句不是问号结尾才补“嗯……”
+          pattern: ^(?![^。！？?？]*[？?])
           replace: 嗯……
           count: 1
           prob: 0.28
         - pattern: (但是|不过|其实|可能|这个)
           replace: \1……
           count: 2
+        - desc: 增加轻微停顿，不全靠省略号
+          pattern: (啊|呃|嗯)([，。])?
+          replace: \1，
+          count: 1
         - pattern: (我觉得|我想|应该|大概)([，。])
           replace: \1……\2
           count: 2
@@ -101,9 +106,16 @@ emotion:
           replace: ……
           count: 1
           prob: 0.75
-        - pattern: ^(?!.*我(?:…|\.{3,})+我)\s*我
+        - desc: 轻微自我修正“我……我”
+          pattern: ^(?!.*我(?:…|\.{3,})+我)\s*我
           replace: 我……我
           count: 1
+          prob: 0.35
+        - desc: 句中出现“我”，补一次轻微改口
+          pattern: ([。！？]|^)\s*我
+          replace: \1我……我
+          count: 1
+          prob: 0.25
     愤怒:
       desc: 压着的愤怒，而非失控
       rules:
