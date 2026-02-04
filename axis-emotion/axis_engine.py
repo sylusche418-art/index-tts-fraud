@@ -829,11 +829,15 @@ def synthesize_turn(
         # ===== 文本处理 =====
         print(f"\n[DEBUG] 步骤1: 文本处理")
         utter = normalize_text_for_tts(utter_raw)
+        print(f"[DEBUG] normalize_text_for_tts: {utter}")
         utter = apply_text_process(utter)
+        print(f"[DEBUG] apply_text_process: {utter}")
         utter = apply_emotion_rhythm_template(utter, emo)
+        print(f"[DEBUG] apply_emotion_rhythm_template({emo}): {utter}")
         # scene/fraud/intention 等“多轴注入”已禁用：保持单轴纯净
         # 语速韵律标记处理
         utter = enhance_text_with_rhythm_marks(utter, rate)
+        print(f"[DEBUG] enhance_text_with_rhythm_marks({rate}): {utter}")
 
         print(f"[DEBUG] 最终处理文本: {utter}")
 
