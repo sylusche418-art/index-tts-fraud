@@ -432,6 +432,15 @@ def limit_ellipsis(text: str) -> str:
     # 3 个以上统一压成 2 个，避免出现“………………”导致模型出现怪异喘气/叹息
     return re.sub(r"…{3,}", "……", text)
 
+def normalize_ellipsis_for_rhythm(text: str) -> str:
+    """统一省略号形态，保证节奏规则可命中。"""
+    if not text:
+        return text
+    # 把英文连续点转成中文省略号，避免“我......我”无法命中规则
+    text = re.sub(r"\.{3,}", "……", text)
+    # 统一过长中文省略号
+    return limit_ellipsis(text)
+
 def normalize_text_for_tts(text: str) -> str:
     """稳定文本标准化（保留你原逻辑）。"""
     text = re.sub(r"\s+", " ", (text or "").strip())
@@ -514,6 +523,7 @@ def apply_emotion_rhythm_template(text: str, emo: str) -> str:
         if DEBUG_RHYTHM_TEMPLATES:
             print(f"[RHYTHM] emo={emo} -> no template")
         return text
+    text = normalize_ellipsis_for_rhythm(text)
 
     rules = cfg.get("rules", []) or []
     if not rules:

@@ -21,7 +21,7 @@ emotion:
   semantic:
     不耐烦:
       desc: 急躁催促
-      prompt: 说话者明显不耐烦，句子短而直接，语速偏快，语气急切强硬，常用推进式表达（如“行了”“别绕了”“直接说重点”），几乎不给对方解释空间。
+      prompt: 说话者明显不耐烦，带轻微咂舌和反问，句子短而直接，语速偏快但语气更蛮横、带质问（如“啧，能不能行？”“行了别绕”），避免压迫式命令口吻。
     压迫性:
       desc: 稳定施压
       prompt: 语气低沉而强势，节奏稳定、持续施压，句尾收得更硬更短，重音落在“必须/立刻/配合”等指令词上，语气压低，少上扬。
@@ -48,6 +48,11 @@ emotion:
     不耐烦:
       desc: 语速偏快、句子更短更硬、推进对话，不给太多解释空间
       rules:
+        - desc: 轻微咂舌起句，体现蛮横质问
+          pattern: ^(?!啧)
+          replace: 啧，
+          count: 1
+          prob: 0.45
         - desc: 去掉多余拖尾，显得更急
           pattern: ……{1,}
           replace: …
@@ -55,8 +60,9 @@ emotion:
         - pattern: 。{2,}
           replace: 。
           count: 2
-        - pattern: 。$
-          replace: ！
+        - desc: 更像质问而非命令
+          pattern: 。$
+          replace: ？
           count: 1
           prob: 0.65
         - pattern: ，{2,}
@@ -87,7 +93,7 @@ emotion:
           pattern: ^(?![^。！？?？]*[？?])
           replace: 嗯……
           count: 1
-          prob: 0.28
+          prob: 0.55
         - pattern: (但是|不过|其实|可能|这个)
           replace: \1……
           count: 2
@@ -106,12 +112,17 @@ emotion:
           pattern: ^(?!.*我(?:…|\.{3,})+我)\s*我
           replace: 我……我
           count: 1
-          prob: 0.35
+          prob: 0.75
         - desc: 句中出现“我”，补一次轻微改口
           pattern: ([。！？]|^)\s*我
           replace: \1我……我
           count: 1
-          prob: 0.25
+          prob: 0.55
+        - desc: 自我修正后加短暂停顿，模拟吞咽感
+          pattern: 我……我(?![，。])
+          replace: 我……我，
+          count: 1
+          prob: 0.6
     愤怒:
       desc: 压着的愤怒，而非失控
       rules:
