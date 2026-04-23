@@ -312,11 +312,22 @@ def _random_speaker_resolver(
     male_pattern = str(pool_cfg.get("male_pattern") or r"^B([1-9]|1[0-9]|2[0-1])\.(wav|mp3|flac|m4a)$")
     female_re = re.compile(female_pattern, re.IGNORECASE)
     male_re = re.compile(male_pattern, re.IGNORECASE)
+    include_list = {
+        str(x).strip() for x in (pool_cfg.get("include_list") or []) if str(x).strip()
+    }
+    exclude_list = {
+        str(x).strip() for x in (pool_cfg.get("exclude_list") or []) if str(x).strip()
+    }
 
     files = [
         p for p in glob.glob(os.path.join(base_dir, "*"))
         if os.path.isfile(p) and os.path.splitext(p)[1].lower() in {".wav", ".mp3", ".flac", ".m4a"}
     ]
+    if include_list:
+        files = [p for p in files if os.path.basename(p) in include_list]
+    if exclude_list:
+        files = [p for p in files if os.path.basename(p) not in exclude_list]
+
     female_pool = [p for p in files if female_re.match(os.path.basename(p))]
     male_pool = [p for p in files if male_re.match(os.path.basename(p))]
     agent_pool = female_pool + male_pool
@@ -343,6 +354,13 @@ def _random_speaker_resolver(
         "enabled": True,
         "base_dir": base_dir,
         "gender": gender,
+        "include_list": sorted(include_list),
+        "exclude_list": sorted(exclude_list),
+        "pool_size": {
+            "all_files": len(files),
+            "female": len(female_pool),
+            "male": len(male_pool),
+        },
         "selected": {
             "Agent": selected["Agent"],
             user_key: selected[user_key],
