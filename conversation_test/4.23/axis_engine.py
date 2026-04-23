@@ -12,7 +12,9 @@ import sys
 import traceback
 import unicodedata
 import uuid
+import wave
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydub import AudioSegment
@@ -84,6 +86,8 @@ FRAUD_KEYWORDS: Dict[str, Any] = {}
 EMO_ALPHA_MAP: Dict[str, float] = {}
 SPEECH_RATE_CONFIG: Dict[str, Any] = {}
 SPEAKER_MAP: Dict[str, Any] = {}
+SPEAKER_SELECTOR_CFG: Dict[str, Any] = {}
+SPEAKER_POOL_CACHE: Dict[str, Any] = {}
 
 # 调试开关（可在 YAML 的 debug 里打开）
 DEBUG_RHYTHM_TEMPLATES: bool = False
@@ -177,7 +181,7 @@ def load_configs(cfg_dir: str) -> None:
     global CRM_PROMPTS, BASE_EMOTION_MAP
     global SEMANTIC_EMO_MAP, TEXT_PROCESS_CFG
     global EMOTION_RHYTHM_TEMPLATES, SCENE_BEHAVIOR_PROFILE, FRAUD_KEYWORDS
-    global EMO_ALPHA_MAP, SPEECH_RATE_CONFIG, SPEAKER_MAP
+    global EMO_ALPHA_MAP, SPEECH_RATE_CONFIG, SPEAKER_MAP, SPEAKER_SELECTOR_CFG
     global POSTPROCESS_AUDIO_CFG, DEBUG_RHYTHM_TEMPLATES
 
     yaml_path = os.path.join(cfg_dir, "config.yaml")
@@ -224,6 +228,7 @@ def load_configs(cfg_dir: str) -> None:
 
     # -------- misc --------
     SPEAKER_MAP = cfg.get("speaker_map", {}) or {}
+    SPEAKER_SELECTOR_CFG = (cfg.get("speaker_selector") or cfg.get("speaker_pool") or {}) or {}
     POSTPROCESS_AUDIO_CFG = cfg.get("postprocess_audio", {}) or {}
 
     print(f"[CFG] Loaded YAML: {yaml_path}")
@@ -264,6 +269,261 @@ def parse_line_selector(expr: str) -> Set[int]:
         else:
             result.add(int(part))
     return result
+
+DEFAULT_SPEAKER_SELECTOR_CFG: Dict[str, Any] = {
+    "enabled": False,
+    "audio_root": "",
+    "female_prefixes": ["A"],
+    "male_prefixes": ["B"],
+    "extensions": [".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aac"],
+    "inventory_filename": "reference_audio_inventory.json",
+    "assignment_filename": "speaker_assignment.json",
+}
+
+
+def _norm_audio_exts(exts: Any) -> List[str]:
+    vals = exts or DEFAULT_SPEAKER_SELECTOR_CFG["extensions"]
+    out: List[str] = []
+    for x in vals:
+        s = str(x).strip().lower()
+        if not s:
+            continue
+        if not s.startswith("."):
+            s = "." + s
+        out.append(s)
+    return out or list(DEFAULT_SPEAKER_SELECTOR_CFG["extensions"])
+
+
+def get_speaker_selector_cfg(audio_root_override: Optional[str] = None) -> Dict[str, Any]:
+    cfg = dict(DEFAULT_SPEAKER_SELECTOR_CFG)
+    raw = SPEAKER_SELECTOR_CFG or {}
+    cfg.update(raw)
+    cfg["female_prefixes"] = [str(x).upper() for x in (raw.get("female_prefixes") or cfg["female_prefixes"]) if str(x).strip()]
+    cfg["male_prefixes"] = [str(x).upper() for x in (raw.get("male_prefixes") or cfg["male_prefixes"]) if str(x).strip()]
+    cfg["extensions"] = _norm_audio_exts(raw.get("extensions") or cfg.get("extensions"))
+    if audio_root_override:
+        cfg["audio_root"] = audio_root_override
+    cfg["audio_root"] = str(cfg.get("audio_root") or "").strip()
+    cfg["enabled"] = bool(cfg.get("enabled", False) or cfg["audio_root"])
+    return cfg
+
+
+def _audio_sort_key(path: str) -> Tuple[str, int, str]:
+    stem = Path(path).stem.upper()
+    m = re.match(r"([A-Z]+)(\d+)", stem)
+    if m:
+        return (m.group(1), int(m.group(2)), stem)
+    return (stem, 10 ** 9, stem)
+
+
+def inspect_audio_file(path: str) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "path": path,
+        "name": os.path.basename(path),
+        "stem": Path(path).stem,
+        "ext": Path(path).suffix.lower(),
+        "exists": os.path.exists(path),
+        "size_bytes": os.path.getsize(path) if os.path.exists(path) else 0,
+    }
+    try:
+        seg = AudioSegment.from_file(path)
+        info.update(
+            {
+                "duration_ms": int(len(seg)),
+                "duration_sec": round(len(seg) / 1000.0, 3),
+                "channels": int(seg.channels),
+                "sample_rate": int(seg.frame_rate),
+                "sample_width": int(seg.sample_width),
+            }
+        )
+    except Exception as e:
+        info["inspect_error"] = repr(e)
+
+    if info["ext"] == ".wav":
+        try:
+            with wave.open(path, "rb") as wf:
+                info.update(
+                    {
+                        "wav_valid": True,
+                        "wav_channels": wf.getnchannels(),
+                        "wav_sample_width": wf.getsampwidth(),
+                        "wav_sample_rate": wf.getframerate(),
+                        "wav_nframes": wf.getnframes(),
+                    }
+                )
+        except Exception as e:
+            info["wav_valid"] = False
+            info["wav_error"] = repr(e)
+    return info
+
+
+def discover_reference_audio_pool(audio_root: str, selector_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    selector_cfg = selector_cfg or get_speaker_selector_cfg(audio_root_override=audio_root)
+    exts = set(_norm_audio_exts(selector_cfg.get("extensions")))
+    female_prefixes = tuple(selector_cfg.get("female_prefixes") or ["A"])
+    male_prefixes = tuple(selector_cfg.get("male_prefixes") or ["B"])
+
+    if not audio_root or not os.path.isdir(audio_root):
+        raise FileNotFoundError(f"reference audio root not found: {audio_root}")
+
+    files: List[str] = []
+    for name in sorted(os.listdir(audio_root)):
+        full = os.path.join(audio_root, name)
+        if not os.path.isfile(full):
+            continue
+        if Path(name).suffix.lower() not in exts:
+            continue
+        files.append(full)
+
+    female: List[str] = []
+    male: List[str] = []
+    other: List[str] = []
+    for full in sorted(files, key=_audio_sort_key):
+        stem_up = Path(full).stem.upper()
+        if female_prefixes and stem_up.startswith(female_prefixes):
+            female.append(full)
+        elif male_prefixes and stem_up.startswith(male_prefixes):
+            male.append(full)
+        else:
+            other.append(full)
+
+    inventory = [inspect_audio_file(p) for p in (female + male + other)]
+    return {
+        "root_dir": audio_root,
+        "female": female,
+        "male": male,
+        "other": other,
+        "all": female + male + other,
+        "inventory": inventory,
+        "summary": {
+            "female_count": len(female),
+            "male_count": len(male),
+            "other_count": len(other),
+            "total_count": len(female) + len(male) + len(other),
+        },
+    }
+
+
+def get_reference_audio_pool(audio_root_override: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    selector_cfg = get_speaker_selector_cfg(audio_root_override=audio_root_override)
+    if not selector_cfg.get("enabled"):
+        return None
+    audio_root = selector_cfg.get("audio_root", "")
+    if not audio_root:
+        return None
+    cache_key = json.dumps(
+        {
+            "audio_root": audio_root,
+            "female_prefixes": selector_cfg.get("female_prefixes"),
+            "male_prefixes": selector_cfg.get("male_prefixes"),
+            "extensions": selector_cfg.get("extensions"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    if cache_key not in SPEAKER_POOL_CACHE:
+        SPEAKER_POOL_CACHE[cache_key] = discover_reference_audio_pool(audio_root, selector_cfg)
+    return SPEAKER_POOL_CACHE[cache_key]
+
+
+def _pick_random_audio(candidates: List[str], exclude: Optional[Set[str]] = None) -> Optional[str]:
+    exclude = {os.path.abspath(x) for x in (exclude or set())}
+    usable = [p for p in candidates if os.path.abspath(p) not in exclude]
+    if not usable:
+        usable = list(candidates)
+    if not usable:
+        return None
+    return random.choice(usable)
+
+
+def build_dialogue_speaker_assignment(*, gender: str, speaker_map: Dict[str, Any]) -> Dict[str, Any]:
+    selector_cfg = get_speaker_selector_cfg()
+    pool = None
+    if selector_cfg.get("enabled"):
+        try:
+            pool = get_reference_audio_pool()
+        except Exception as e:
+            print(f"[WARN] dynamic speaker pool unavailable: {e}; fallback to speaker_map")
+
+    if pool:
+        user_candidates = pool["female"] if gender == "female" else pool["male"]
+        if not user_candidates:
+            user_candidates = pool["all"]
+
+        user_path = _pick_random_audio(user_candidates)
+        agent_path = _pick_random_audio(pool["all"], exclude={user_path} if user_path else None)
+        if not user_path or not agent_path:
+            raise RuntimeError("reference audio pool is empty; cannot assign prompts")
+
+        return {
+            "mode": "dynamic_pool",
+            "gender": gender,
+            "audio_root": pool.get("root_dir"),
+            "Agent": {"path": agent_path, "name": os.path.basename(agent_path)},
+            "User": {"path": user_path, "name": os.path.basename(user_path)},
+            "pool_summary": pool.get("summary", {}),
+        }
+
+    user_key = "User_female" if gender == "female" else "User_male"
+    agent_path = speaker_map.get("Agent")
+    user_path = speaker_map.get(user_key) or speaker_map.get("User")
+    if not agent_path or not user_path:
+        raise RuntimeError("speaker_map 缺少 Agent / User_female / User_male，且动态 speaker_selector 未启用")
+
+    return {
+        "mode": "speaker_map",
+        "gender": gender,
+        "audio_root": "",
+        "Agent": {"path": agent_path, "name": os.path.basename(agent_path)},
+        "User": {"path": user_path, "name": os.path.basename(user_path)},
+        "pool_summary": {},
+    }
+
+
+def save_json(obj: Any, path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+
+def save_speaker_assignment(call_dir: Optional[str], assignment: Dict[str, Any]) -> None:
+    if not call_dir:
+        return
+    selector_cfg = get_speaker_selector_cfg()
+    filename = str(selector_cfg.get("assignment_filename") or "speaker_assignment.json")
+    save_json(assignment, os.path.join(call_dir, filename))
+
+
+def save_reference_audio_inventory(run_dir: str, pool: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not run_dir or not pool:
+        return None
+    selector_cfg = get_speaker_selector_cfg()
+    filename = str(selector_cfg.get("inventory_filename") or "reference_audio_inventory.json")
+    outp = os.path.join(run_dir, filename)
+    payload = {
+        "audio_root": pool.get("root_dir"),
+        "summary": pool.get("summary", {}),
+        "inventory": pool.get("inventory", []),
+    }
+    save_json(payload, outp)
+    print(f"[REF_AUDIO] inventory_json={outp}")
+    return outp
+
+
+def build_speaker_manifest_fields(speaker_assignment: Dict[str, Any], role: str) -> Dict[str, Any]:
+    agent = (speaker_assignment or {}).get("Agent") or {}
+    user = (speaker_assignment or {}).get("User") or {}
+    current = (speaker_assignment or {}).get(role) or {}
+    return {
+        "speaker_mode": (speaker_assignment or {}).get("mode", ""),
+        "speaker_gender": (speaker_assignment or {}).get("gender", ""),
+        "speaker_prompt": current.get("path", ""),
+        "speaker_prompt_name": current.get("name", ""),
+        "agent_voice": agent.get("path", ""),
+        "agent_voice_name": agent.get("name", ""),
+        "user_voice": user.get("path", ""),
+        "user_voice_name": user.get("name", ""),
+    }
 
 def safe_name(s: str, max_len: int = 80) -> str:
     s = (s or "unknown").strip() or "unknown"
@@ -805,8 +1065,7 @@ def synthesize_turn(
     tts: Any,
     turn: Dict[str, Any],
     scene: str,
-    speaker_map: Dict[str, Any],
-    gender: str,
+    speaker_assignment: Dict[str, Any],
     out_dir: str,
     call_dir: str,
     idx: int,
@@ -828,7 +1087,10 @@ def synthesize_turn(
             axis_mode=axis_mode
         )
         role = "Agent" if turn.get("speaker","").lower() in ["agent","客服"] else "User"
-        speaker = "Agent" if role=="Agent" else f"User_{gender}"
+        speaker = "Agent" if role == "Agent" else "User"
+        spk_prompt = ((speaker_assignment or {}).get(speaker) or {}).get("path", "")
+        if not spk_prompt:
+            raise RuntimeError(f"Missing speaker prompt for role={speaker}")
 
         print(f"\n[处理第{idx}/{total_turns}轮] {role}：{utter_raw}")
 
@@ -889,7 +1151,7 @@ def synthesize_turn(
                 audio_all += AudioSegment.silent(duration=pause_before)
 
             tts.infer(
-                spk_audio_prompt=speaker_map[speaker],
+                spk_audio_prompt=spk_prompt,
                 text=sub,
                 output_path=tmp,
                 use_emo_text=True,
@@ -1065,13 +1327,22 @@ def export_dataset(
         with open(speaker_map_path, "r", encoding="utf-8") as f:
             speaker_map = json.load(f)
 
-    if not isinstance(speaker_map, dict) or not speaker_map:
+    selector_cfg = get_speaker_selector_cfg()
+    selector_enabled = bool(selector_cfg.get("enabled"))
+
+    if (not selector_enabled) and (not isinstance(speaker_map, dict) or not speaker_map):
         raise RuntimeError(
-            "speaker_map 为空：请在 configs_dir/config.yaml 顶层加入 speaker_map，"
-            "或传入 --speaker_map 指向旧的 speaker_map.json"
+            "speaker_map 为空，且未启用 speaker_selector：请在 configs_dir/config.yaml 顶层加入 speaker_map，"
+            "或配置 speaker_selector.enabled/audio_root，或传入 --speaker_map 指向旧的 speaker_map.json"
         )
 
     print(f"[CFG] speaker_map_keys_used={len(speaker_map)}")
+    if selector_enabled:
+        print(f"[CFG] speaker_selector enabled, audio_root={selector_cfg.get('audio_root')}")
+        try:
+            save_reference_audio_inventory(run_dir, get_reference_audio_pool())
+        except Exception as e:
+            raise RuntimeError(f"speaker_selector 启用但无法扫描音频目录: {e}") from e
 
     tts = IndexTTS2(cfg, model_dir, use_fp16=fp16)
 
@@ -1122,6 +1393,12 @@ def export_dataset(
                 call_key = f"{call_id}_{name}"
 
                 print(f"\n[LINE {line_idx}] call={call_key} turns={len(conv_list)} scene={scene} gender={gender}")
+                speaker_assignment = build_dialogue_speaker_assignment(gender=gender, speaker_map=speaker_map)
+                print(
+                    f"[SPEAKER] call={call_key} mode={speaker_assignment.get('mode')} "
+                    f"agent={speaker_assignment.get('Agent',{}).get('name')} "
+                    f"user={speaker_assignment.get('User',{}).get('name')}"
+                )
 
                 # conversation output
                 conv_call_dir = None
@@ -1137,6 +1414,7 @@ def export_dataset(
                     parsed_path = os.path.join(conv_call_dir, f"{call_key}.json")
                     with open(parsed_path, "w", encoding="utf-8") as wf:
                         json.dump(obj, wf, ensure_ascii=False, indent=2)
+                    save_speaker_assignment(conv_call_dir, speaker_assignment)
 
                 # per-turn
                 for turn_idx, turn in enumerate(conv_list, start=1):
@@ -1148,8 +1426,7 @@ def export_dataset(
                             tts=tts,
                             turn=turn,
                             scene=scene,
-                            speaker_map=speaker_map,
-                            gender=gender,
+                            speaker_assignment=speaker_assignment,
                             out_dir=conv_turns_dir,
                             call_dir=conv_call_dir or conv_turns_dir,
                             idx=turn_idx,
@@ -1172,6 +1449,7 @@ def export_dataset(
                                 "intention": (turn.get("intention") or "").strip(),
                                 "wav": relpath(wav_all, run_dir),
                             }
+                            rec_all.update(build_speaker_manifest_fields(speaker_assignment, role))
                             conv_manifest_fp.write(json.dumps(rec_all, ensure_ascii=False) + "\n")
 
                     # 2) axis mask outputs
@@ -1191,8 +1469,7 @@ def export_dataset(
                             tts=tts,
                             turn=turn,
                             scene=scene,
-                            speaker_map=speaker_map,
-                            gender=gender,
+                            speaker_assignment=speaker_assignment,
                             out_dir=turns_dir,
                             call_dir=call_dir,
                             idx=turn_idx,
@@ -1217,6 +1494,7 @@ def export_dataset(
                             "text": utter_raw,
                             "wav": relpath(wav_path, run_dir),
                         }
+                        rec.update(build_speaker_manifest_fields(speaker_assignment, role))
                         manifest_fps[axis_dir].write(json.dumps(rec, ensure_ascii=False) + "\n")
 
                 # merge
@@ -1263,7 +1541,7 @@ def _parse_axes_arg(s: str) -> List[str]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input",required=True)
-    ap.add_argument("--speaker_map",required=True)
+    ap.add_argument("--speaker_map", default="", help="(可选) 旧版 speaker_map.json；若 config.yaml 已启用 speaker_selector，可不传")
     ap.add_argument("--cfg",required=True)
     ap.add_argument("--model_dir",required=True)
     ap.add_argument("--configs_dir",required=True)

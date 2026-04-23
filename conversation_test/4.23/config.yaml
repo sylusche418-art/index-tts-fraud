@@ -189,6 +189,14 @@ speaker_map:
   Agent: /home/shentong/index-tts-main/examples_fixed/voice_07.wav
   User_male: /home/shentong/index-tts-main/examples_fixed/voice_00.wav
   User_female: /home/shentong/index-tts-main/examples_fixed/voice_11.wav
+speaker_selector:
+  enabled: true
+  audio_root: /home/shentong/index-tts-main/axis_pack/音频路径
+  female_prefixes: ["A"]
+  male_prefixes: ["B"]
+  extensions: [".wav", ".mp3", ".flac", ".m4a"]
+  inventory_filename: reference_audio_inventory.json
+  assignment_filename: speaker_assignment.json
 postprocess_audio:
   normalize_headroom_db: 6.0
   target_peak_dbfs: -1.0
