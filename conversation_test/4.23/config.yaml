@@ -189,6 +189,14 @@ speaker_map:
   Agent: /home/shentong/index-tts-main/examples_fixed/voice_07.wav
   User_male: /home/shentong/index-tts-main/examples_fixed/voice_00.wav
   User_female: /home/shentong/index-tts-main/examples_fixed/voice_11.wav
+speaker_pool:
+  enabled: true
+  base_dir: /home/shentong/index-tts-main/axis_pack/音频路径
+  female_pattern: "^A([1-9]|1[0-9]|2[0-2])\\.(wav|mp3|flac|m4a)$"
+  male_pattern: "^B([1-9]|1[0-9]|2[0-1])\\.(wav|mp3|flac|m4a)$"
+  include_list: []   # 只测这些文件名；留空=不过滤
+  exclude_list: []   # 不想要的音频文件名，先放这里
+  log_audio_format: true
 postprocess_audio:
   normalize_headroom_db: 6.0
   target_peak_dbfs: -1.0

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import glob
 import os
 import random
 import re
@@ -84,6 +85,7 @@ FRAUD_KEYWORDS: Dict[str, Any] = {}
 EMO_ALPHA_MAP: Dict[str, float] = {}
 SPEECH_RATE_CONFIG: Dict[str, Any] = {}
 SPEAKER_MAP: Dict[str, Any] = {}
+SPEAKER_POOL_CFG: Dict[str, Any] = {}
 
 # 调试开关（可在 YAML 的 debug 里打开）
 DEBUG_RHYTHM_TEMPLATES: bool = False
@@ -178,6 +180,7 @@ def load_configs(cfg_dir: str) -> None:
     global SEMANTIC_EMO_MAP, TEXT_PROCESS_CFG
     global EMOTION_RHYTHM_TEMPLATES, SCENE_BEHAVIOR_PROFILE, FRAUD_KEYWORDS
     global EMO_ALPHA_MAP, SPEECH_RATE_CONFIG, SPEAKER_MAP
+    global SPEAKER_POOL_CFG
     global POSTPROCESS_AUDIO_CFG, DEBUG_RHYTHM_TEMPLATES
 
     yaml_path = os.path.join(cfg_dir, "config.yaml")
@@ -224,10 +227,13 @@ def load_configs(cfg_dir: str) -> None:
 
     # -------- misc --------
     SPEAKER_MAP = cfg.get("speaker_map", {}) or {}
+    SPEAKER_POOL_CFG = cfg.get("speaker_pool", {}) or {}
     POSTPROCESS_AUDIO_CFG = cfg.get("postprocess_audio", {}) or {}
 
     print(f"[CFG] Loaded YAML: {yaml_path}")
     print(f"[CFG] speaker_map_keys={len(SPEAKER_MAP)}")
+    if isinstance(SPEAKER_POOL_CFG, dict) and SPEAKER_POOL_CFG.get("enabled", False):
+        print(f"[CFG] speaker_pool enabled, base_dir={SPEAKER_POOL_CFG.get('base_dir', '')}")
     if DEBUG_RHYTHM_TEMPLATES:
         print("[CFG] DEBUG_RHYTHM_TEMPLATES=ON")
 #============== 小工具 ==================
@@ -264,6 +270,115 @@ def parse_line_selector(expr: str) -> Set[int]:
         else:
             result.add(int(part))
     return result
+
+def _audio_format_info(path: str) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "path": path,
+        "ext": os.path.splitext(path)[1].lower(),
+        "size_bytes": os.path.getsize(path) if os.path.exists(path) else -1,
+    }
+    if not os.path.exists(path):
+        info["error"] = "missing"
+        return info
+
+    try:
+        from pydub.utils import mediainfo
+        meta = mediainfo(path)
+        for k in ("codec_name", "codec_type", "sample_rate", "channels", "bit_rate", "duration"):
+            if meta.get(k):
+                info[k] = meta.get(k)
+    except Exception as e:
+        info["mediainfo_error"] = str(e)
+    return info
+
+def _random_speaker_resolver(
+    speaker_map: Dict[str, Any],
+    gender: str,
+    call_dir: Optional[str] = None,
+) -> Tuple[Dict[str, str], Dict[str, Any]]:
+    pool_cfg = SPEAKER_POOL_CFG if isinstance(SPEAKER_POOL_CFG, dict) else {}
+    if not pool_cfg.get("enabled", False):
+        selected = {
+            "Agent": speaker_map["Agent"],
+            "User_male": speaker_map["User_male"],
+            "User_female": speaker_map["User_female"],
+        }
+        return selected, {"enabled": False}
+
+    base_dir = str(pool_cfg.get("base_dir") or "").strip()
+    if not base_dir:
+        raise RuntimeError("speaker_pool.enabled=true 但未配置 base_dir")
+    female_pattern = str(pool_cfg.get("female_pattern") or r"^A([1-9]|1[0-9]|2[0-2])\.(wav|mp3|flac|m4a)$")
+    male_pattern = str(pool_cfg.get("male_pattern") or r"^B([1-9]|1[0-9]|2[0-1])\.(wav|mp3|flac|m4a)$")
+    female_re = re.compile(female_pattern, re.IGNORECASE)
+    male_re = re.compile(male_pattern, re.IGNORECASE)
+    include_list = {
+        str(x).strip() for x in (pool_cfg.get("include_list") or []) if str(x).strip()
+    }
+    exclude_list = {
+        str(x).strip() for x in (pool_cfg.get("exclude_list") or []) if str(x).strip()
+    }
+
+    files = [
+        p for p in glob.glob(os.path.join(base_dir, "*"))
+        if os.path.isfile(p) and os.path.splitext(p)[1].lower() in {".wav", ".mp3", ".flac", ".m4a"}
+    ]
+    if include_list:
+        files = [p for p in files if os.path.basename(p) in include_list]
+    if exclude_list:
+        files = [p for p in files if os.path.basename(p) not in exclude_list]
+
+    female_pool = [p for p in files if female_re.match(os.path.basename(p))]
+    male_pool = [p for p in files if male_re.match(os.path.basename(p))]
+    agent_pool = female_pool + male_pool
+    if not agent_pool:
+        raise RuntimeError(f"speaker_pool 在 {base_dir} 未找到可用音频")
+
+    user_key = "User_female" if gender == "female" else "User_male"
+    user_pool = female_pool if gender == "female" else male_pool
+    if not user_pool:
+        raise RuntimeError(f"speaker_pool 中 {gender} 池为空，请检查命名规则和目录")
+
+    agent_voice = random.choice(agent_pool)
+    user_candidates = [p for p in user_pool if p != agent_voice]
+    user_voice = random.choice(user_candidates or user_pool)
+
+    selected = {
+        "Agent": agent_voice,
+        "User_male": user_voice if user_key == "User_male" else random.choice(male_pool) if male_pool else user_voice,
+        "User_female": user_voice if user_key == "User_female" else random.choice(female_pool) if female_pool else user_voice,
+    }
+    # 当前对话只会使用 gender 对应 User_*，另一性别占位不影响输出
+
+    fmt_log = {
+        "enabled": True,
+        "base_dir": base_dir,
+        "gender": gender,
+        "include_list": sorted(include_list),
+        "exclude_list": sorted(exclude_list),
+        "pool_size": {
+            "all_files": len(files),
+            "female": len(female_pool),
+            "male": len(male_pool),
+        },
+        "selected": {
+            "Agent": selected["Agent"],
+            user_key: selected[user_key],
+        },
+        "format_info": {
+            "Agent": _audio_format_info(selected["Agent"]),
+            user_key: _audio_format_info(selected[user_key]),
+        },
+    }
+
+    if call_dir:
+        try:
+            os.makedirs(call_dir, exist_ok=True)
+            with open(os.path.join(call_dir, "voice_selection.json"), "w", encoding="utf-8") as wf:
+                json.dump(fmt_log, wf, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[WARN] 写入 voice_selection.json 失败: {e}")
+    return selected, fmt_log
 
 def safe_name(s: str, max_len: int = 80) -> str:
     s = (s or "unknown").strip() or "unknown"
@@ -1138,6 +1253,19 @@ def export_dataset(
                     with open(parsed_path, "w", encoding="utf-8") as wf:
                         json.dump(obj, wf, ensure_ascii=False, indent=2)
 
+                # 为当前对话随机选择 voice，保证 Agent/User 不同
+                voice_log_dir = conv_call_dir or os.path.join(run_dir, "_voice_logs", call_key)
+                call_speaker_map, _ = _random_speaker_resolver(
+                    speaker_map=speaker_map,
+                    gender=gender,
+                    call_dir=voice_log_dir,
+                )
+                print(
+                    "[VOICE] "
+                    f"Agent={os.path.basename(call_speaker_map['Agent'])} "
+                    f"User_{gender}={os.path.basename(call_speaker_map[f'User_{gender}'])}"
+                )
+
                 # per-turn
                 for turn_idx, turn in enumerate(conv_list, start=1):
                     utter_raw = (turn.get("utterance") or "").strip()
@@ -1148,7 +1276,7 @@ def export_dataset(
                             tts=tts,
                             turn=turn,
                             scene=scene,
-                            speaker_map=speaker_map,
+                            speaker_map=call_speaker_map,
                             gender=gender,
                             out_dir=conv_turns_dir,
                             call_dir=conv_call_dir or conv_turns_dir,
@@ -1170,6 +1298,8 @@ def export_dataset(
                                 "emotion": (turn.get("emotion") or "正常").strip() or "正常",
                                 "speech_rate_anomaly": (turn.get("speech_rate_anomaly") or "正常").strip() or "正常",
                                 "intention": (turn.get("intention") or "").strip(),
+                                "voice_agent": os.path.basename(call_speaker_map["Agent"]),
+                                "voice_user": os.path.basename(call_speaker_map[f"User_{gender}"]),
                                 "wav": relpath(wav_all, run_dir),
                             }
                             conv_manifest_fp.write(json.dumps(rec_all, ensure_ascii=False) + "\n")
@@ -1191,7 +1321,7 @@ def export_dataset(
                             tts=tts,
                             turn=turn,
                             scene=scene,
-                            speaker_map=speaker_map,
+                            speaker_map=call_speaker_map,
                             gender=gender,
                             out_dir=turns_dir,
                             call_dir=call_dir,
@@ -1215,6 +1345,8 @@ def export_dataset(
                             "turn_idx": turn_idx,
                             "role": role,
                             "text": utter_raw,
+                            "voice_agent": os.path.basename(call_speaker_map["Agent"]),
+                            "voice_user": os.path.basename(call_speaker_map[f"User_{gender}"]),
                             "wav": relpath(wav_path, run_dir),
                         }
                         manifest_fps[axis_dir].write(json.dumps(rec, ensure_ascii=False) + "\n")
