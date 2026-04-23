@@ -1,0 +1,19 @@
+{
+  "punctuation": {
+    "question": {
+      "pattern": "？$",
+      "replace": "？",
+      "desc": "保留问号，不自动加语气词"
+    },
+    "exclamation": {
+      "pattern": "！",
+      "replace": "！",
+      "desc": "保留感叹号，不自动加语气词"
+    }
+  },
+
+  "job_id": {
+    "pattern": "(工号|编号|账号)[：:]?\\s*(\\d+)",
+    "desc": "工号逐字读"
+  }
+}

@@ -35,10 +35,11 @@ from transformers import SeamlessM4TFeatureExtractor
 import random
 import torch.nn.functional as F
 
+
 class IndexTTS2:
     def __init__(
-            self, cfg_path="checkpoints/config.yaml", model_dir="checkpoints", use_fp16=False, device=None,
-            use_cuda_kernel=None,use_deepspeed=False, use_accel=False, use_torch_compile=False
+            self, cfg_path="checkpoints/config.yaml", model_dir="checkpoints/IndexTTS-2", use_fp16=False, device=None,
+            use_cuda_kernel=None, use_deepspeed=False, use_accel=False, use_torch_compile=False
     ):
         """
         Args:
@@ -139,13 +140,13 @@ class IndexTTS2:
         )
         self.s2mel = s2mel.to(self.device)
         self.s2mel.models['cfm'].estimator.setup_caches(max_batch_size=1, max_seq_length=8192)
-        
+
         # Enable torch.compile optimization if requested
         if self.use_torch_compile:
             print(">> Enabling torch.compile optimization")
             self.s2mel.enable_torch_compile()
             print(">> torch.compile optimization enabled successfully")
-        
+
         self.s2mel.eval()
         print(">> s2mel weights restored from:", s2mel_path)
 
@@ -323,11 +324,11 @@ class IndexTTS2:
         if self.gr_progress is not None:
             self.gr_progress(value, desc=desc)
 
-    def _load_and_cut_audio(self,audio_path,max_audio_length_seconds,verbose=False,sr=None):
+    def _load_and_cut_audio(self, audio_path, max_audio_length_seconds, verbose=False, sr=None):
         if not sr:
             audio, sr = librosa.load(audio_path)
         else:
-            audio, _ = librosa.load(audio_path,sr=sr)
+            audio, _ = librosa.load(audio_path, sr=sr)
         audio = torch.tensor(audio).unsqueeze(0)
         max_audio_samples = int(max_audio_length_seconds * sr)
 
@@ -336,7 +337,7 @@ class IndexTTS2:
                 print(f"Audio too long ({audio.shape[1]} samples), truncating to {max_audio_samples} samples")
             audio = audio[:, :max_audio_samples]
         return audio, sr
-    
+
     def normalize_emo_vec(self, emo_vector, apply_bias=True):
         # apply biased emotion factors for better user experience,
         # by de-emphasizing emotions that can cause strange results
@@ -358,7 +359,8 @@ class IndexTTS2:
               emo_audio_prompt=None, emo_alpha=1.0,
               emo_vector=None,
               use_emo_text=False, emo_text=None, use_random=False, interval_silence=200,
-              verbose=False, max_text_tokens_per_segment=120, stream_return=False, more_segment_before=0, **generation_kwargs):
+              verbose=False, max_text_tokens_per_segment=1000, stream_return=False, more_segment_before=0,
+              **generation_kwargs):
         if stream_return:
             return self.infer_generator(
                 spk_audio_prompt, text, output_path,
@@ -380,10 +382,11 @@ class IndexTTS2:
                 return None
 
     def infer_generator(self, spk_audio_prompt, text, output_path,
-              emo_audio_prompt=None, emo_alpha=1.0,
-              emo_vector=None,
-              use_emo_text=False, emo_text=None, use_random=False, interval_silence=200,
-              verbose=False, max_text_tokens_per_segment=120, stream_return=False, quick_streaming_tokens=0, **generation_kwargs):
+                        emo_audio_prompt=None, emo_alpha=1.0,
+                        emo_vector=None,
+                        use_emo_text=False, emo_text=None, use_random=False, interval_silence=200,
+                        verbose=False, max_text_tokens_per_segment=1000, stream_return=False, quick_streaming_tokens=0,
+                        **generation_kwargs):
         print(">> starting inference...")
         self._set_gr_progress(0, "starting inference...")
         if verbose:
@@ -432,7 +435,7 @@ class IndexTTS2:
                 self.cache_s2mel_prompt = None
                 self.cache_mel = None
                 torch.cuda.empty_cache()
-            audio,sr = self._load_and_cut_audio(spk_audio_prompt,15,verbose)
+            audio, sr = self._load_and_cut_audio(spk_audio_prompt, 15, verbose)
             audio_22k = torchaudio.transforms.Resample(sr, 22050)(audio)
             audio_16k = torchaudio.transforms.Resample(sr, 16000)(audio)
 
@@ -486,7 +489,7 @@ class IndexTTS2:
             if self.cache_emo_cond is not None:
                 self.cache_emo_cond = None
                 torch.cuda.empty_cache()
-            emo_audio, _ = self._load_and_cut_audio(emo_audio_prompt,15,verbose,sr=16000)
+            emo_audio, _ = self._load_and_cut_audio(emo_audio_prompt, 15, verbose, sr=16000)
             emo_inputs = self.extract_features(emo_audio, sampling_rate=16000, return_tensors="pt")
             emo_input_features = emo_inputs["input_features"]
             emo_attention_mask = emo_inputs["attention_mask"]
@@ -501,24 +504,27 @@ class IndexTTS2:
 
         self._set_gr_progress(0.1, "text processing...")
         text_tokens_list = self.tokenizer.tokenize(text)
-        segments = self.tokenizer.split_segments(text_tokens_list, max_text_tokens_per_segment, quick_streaming_tokens = quick_streaming_tokens)
+        segments = self.tokenizer.split_segments(text_tokens_list, max_text_tokens_per_segment,
+                                                 quick_streaming_tokens=quick_streaming_tokens)
         segments_count = len(segments)
 
         text_token_ids = self.tokenizer.convert_tokens_to_ids(text_tokens_list)
         if self.tokenizer.unk_token_id in text_token_ids:
-            print(f"  >> Warning: input text contains {text_token_ids.count(self.tokenizer.unk_token_id)} unknown tokens (id={self.tokenizer.unk_token_id}):")
-            print( "     Tokens which can't be encoded: ", [t for t, id in zip(text_tokens_list, text_token_ids) if id == self.tokenizer.unk_token_id])
+            print(
+                f"  >> Warning: input text contains {text_token_ids.count(self.tokenizer.unk_token_id)} unknown tokens (id={self.tokenizer.unk_token_id}):")
+            print("     Tokens which can't be encoded: ",
+                  [t for t, id in zip(text_tokens_list, text_token_ids) if id == self.tokenizer.unk_token_id])
             print(f"     Consider updating the BPE model or modifying the text to avoid unknown tokens.")
-                  
+
         if verbose:
             print("text_tokens_list:", text_tokens_list)
             print("segments count:", segments_count)
             print("max_text_tokens_per_segment:", max_text_tokens_per_segment)
             print(*segments, sep="\n")
-        do_sample = generation_kwargs.pop("do_sample", True)
-        top_p = generation_kwargs.pop("top_p", 0.8)
-        top_k = generation_kwargs.pop("top_k", 30)
-        temperature = generation_kwargs.pop("temperature", 0.8)
+        do_sample = generation_kwargs.pop("do_sample", False)
+        top_p = generation_kwargs.pop("top_p", 1.0)
+        top_k = generation_kwargs.pop("top_k", 0)
+        temperature = generation_kwargs.pop("temperature", 1.0)
         autoregressive_batch_size = 1
         length_penalty = generation_kwargs.pop("length_penalty", 0.0)
         num_beams = generation_kwargs.pop("num_beams", 3)
@@ -532,7 +538,7 @@ class IndexTTS2:
         s2mel_time = 0
         bigvgan_time = 0
         has_warned = False
-        silence = None # for stream_return
+        silence = None  # for stream_return
         for seg_idx, sent in enumerate(segments):
             self._set_gr_progress(0.2 + 0.7 * seg_idx / segments_count,
                                   f"speech synthesis {seg_idx + 1}/{segments_count}...")
@@ -669,7 +675,8 @@ class IndexTTS2:
                 if stream_return:
                     yield wav.cpu()
                     if silence == None:
-                        silence = self.interval_silence(wavs, sampling_rate=sampling_rate, interval_silence=interval_silence)
+                        silence = self.interval_silence(wavs, sampling_rate=sampling_rate,
+                                                        interval_silence=interval_silence)
                     yield silence
         end_time = time.perf_counter()
 
@@ -715,6 +722,7 @@ def find_most_similar_cosine(query_vector, matrix):
     similarities = F.cosine_similarity(query_vector, matrix, dim=1)
     most_similar_index = torch.argmax(similarities)
     return most_similar_index
+
 
 class QwenEmotion:
     def __init__(self, model_dir):
@@ -834,14 +842,15 @@ if __name__ == "__main__":
     prompt_wav = "examples/voice_01.wav"
     text = '欢迎大家来体验indextts2，并给予我们意见与反馈，谢谢大家。'
     tts = IndexTTS2(
-        cfg_path="checkpoints/config.yaml", 
-        model_dir="checkpoints", 
+        cfg_path="checkpoints/config.yaml",
+        model_dir="checkpoints/IndexTTS-2",
         use_cuda_kernel=False,
         use_torch_compile=True
     )
     tts.infer(spk_audio_prompt=prompt_wav, text=text, output_path="gen.wav", verbose=True)
     char_size = 5
     import string
+
     time_buckets = []
     for i in range(10):
         text = ''.join(random.choices(string.ascii_letters, k=char_size))
