@@ -1,0 +1,134 @@
+{
+  "正常": {
+    "desc": "中性自然",
+    "rules": []
+  },
+
+  "困惑": {
+    "desc": "轻微疑惑，不夸张",
+    "rules": [
+      {
+        "pattern": "(什么|怎么|为什么|是不是)",
+        "replace": "\\1……",
+        "count": 1
+      }
+    ]
+  },
+
+  "不耐烦": {
+    "desc": "语速略快，克制的烦躁,将结尾的句号改为省略号，表现出一种‘懒得解释’的尾音下沉",
+    "rules": [
+      {
+        "pattern": "。",
+        "replace": "，",
+        "count": 1
+      },
+      {
+        "pattern": "^哎呀",
+        "replace": "哎呀！",
+        "count": 1
+      },
+      {
+        "pattern": "。{1，}",
+        "replace": "。",
+        "count": 2
+      },
+      {
+        "pattern": "[，。]",
+        "replace": "，",
+        "count": 2
+      },
+      {
+        "pattern": "现在",
+        "replace": "现在立刻"
+      }
+    ]
+  },
+
+  "压迫性": {
+    "rules": [
+      {
+        "desc": "去掉感叹号前的停顿，使其语气更生硬",
+        "pattern": "([！!])",
+        "replace": "！",
+        "prob": 1.0
+      },
+      {
+        "desc": "在指令性动词后紧跟内容，不留空隙",
+        "pattern": "(请务必|立刻|马上|配合)([，, ]?)",
+        "replace": "\\1",
+        "prob": 0.9
+      }
+    ]
+  },
+
+   "犹豫": {
+  "desc": "真实犹豫，思考中断而非情绪化",
+  "rules": [
+      {
+        "pattern": "^(我|嗯|那个|这个)",
+        "replace": "\\1",
+        "count": 1
+      },
+      {
+        "pattern": "(但是|不过)",
+        "replace": "\\1",
+        "count": 1
+      },
+      {
+        "pattern": "。$",
+        "replace": "。",
+        "count": 1,
+        "prob": 0.4
+      }
+    ]
+  },
+
+  "愤怒": {
+    "desc": "压着的愤怒，而非失控",
+    "rules": [
+      {
+        "pattern": "。$",
+        "replace": "！",
+        "count": 1
+      }
+    ]
+  },
+
+  "恐慌": {
+    "desc": "紧张但不破碎",
+    "rules": [
+      {
+        "pattern": "我",
+        "replace": "我……",
+        "count": 1
+      }
+    ]
+  },
+
+  "兴奋": {
+    "desc": "情绪上扬但不过度",
+    "rules": [
+      {
+        "pattern": "。",
+        "replace": "！",
+        "count": 1
+      },
+      {
+        "pattern": "？",
+        "replace": "！",
+        "count": 1
+      },
+      {
+        "pattern": "是这样的，",
+        "replace": "是这样的！",
+        "count": 1
+      },
+      {
+        "pattern": "真的假的啊",
+        "replace": "真的假的啊！",
+        "desc": "加强兴奋语气"
+      }
+    ]
+  }
+}

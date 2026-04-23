@@ -1,0 +1,154 @@
+{
+  "正常通话": {
+    "base_modulation": {
+      "emotion_alpha": 0.30
+    },
+
+    "soft_modulation": {
+      "Agent": {
+        "speech_rate": {
+          "语速加快": 0.10
+        }
+      },
+      "User": {
+        "speech_rate": {
+          "语速放慢": 0.10
+        }
+      }
+    },
+
+    "intention_trigger": {}
+  },
+
+  "涉嫌诈骗": {
+    "base_modulation": {
+      "emotion_alpha": 0.35
+    },
+
+    "soft_modulation": {
+      "Agent": {
+        "emotion_bias": {
+          "压迫性": 0.30,
+          "不耐烦": 0.25
+        },
+        "speech_rate": {
+          "语速加快": 0.30,
+          "忽快忽慢": 0.15
+        }
+      },
+      "User": {
+        "emotion_bias": {
+          "犹豫": 0.20,
+          "恐慌": 0.15
+        },
+        "speech_rate": {
+          "语速放慢": 0.25,
+          "不自然停顿": 0.20
+        }
+      }
+    },
+
+    "intention_trigger": {
+      "Agent": {
+        "危机植入": {
+          "microexpression": {
+            "冷笑": 0.45,
+            "语调急剧降低": 0.30
+          },
+          "speech_rate": {
+            "语速加快": 0.25
+          }
+        },
+
+        "操作指令": {
+          "microexpression": {
+            "语调急剧降低": 0.40
+          },
+          "speech_rate": {
+            "不自然停顿": 0.30
+          }
+        }
+      },
+
+      "User": {
+        "信息核实": {
+          "microexpression": {
+            "倒吸气": 0.40
+          },
+          "speech_rate": {
+            "语速放慢": 0.30
+          }
+        },
+
+        "理清思路": {
+          "speech_rate": {
+            "语速放慢": 0.40
+          }
+        }
+      }
+    }
+  },
+
+  "确定诈骗": {
+    "base_modulation": {
+      "emotion_alpha": 0.40
+    },
+
+    "soft_modulation": {
+      "Agent": {
+        "emotion_bias": {
+          "压迫性": 0.30
+        },
+        "speech_rate": {
+          "语速加快": 0.30,
+          "忽快忽慢": 0.25
+        }
+      },
+      "User": {
+        "emotion_bias": {
+          "恐慌": 0.35,
+          "愤怒": 0.25
+        },
+        "speech_rate": {
+          "语速放慢": 0.35,
+          "不自然停顿": 0.30
+        }
+      }
+    },
+
+    "intention_trigger": {
+      "Agent": {
+        "危机植入": {
+          "microexpression": {
+            "冷笑": 0.65,
+            "语调急剧降低": 0.45
+          },
+          "speech_rate": {
+            "语速加快": 0.35
+          }
+        },
+
+        "利益诱导": {
+          "microexpression": {
+            "语调急剧升高": 0.40
+          },
+          "speech_rate": {
+            "语速加快": 0.30
+          }
+        }
+      },
+
+      "User": {
+        "请求通融": {
+          "microexpression": {
+            "哭腔": 0.55
+          },
+          "speech_rate": {
+            "语速放慢": 0.40,
+            "不自然停顿": 0.30
+          }
+        }
+      }
+    }
+  }
+}

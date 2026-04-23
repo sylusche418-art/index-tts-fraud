@@ -1,0 +1,62 @@
+{
+    "语速加快": {
+        "speed_factor": 1.02,
+        "max_len": 80,
+        "min_len": 35,
+        "pause_chars": [ "。"],
+        "split_prob": 0,
+        "short_pause": 5,
+        "long_pause": 10,
+        "long_pause_prob": 0.01,
+        "fade_duration": 5,
+        "emo_vector_adjustment": [0.1, 0.1, -0.1, 0.05, 0.0, -0.1, 0.05, -0.1]
+    },
+    "语速放慢": {
+        "speed_factor": 0.97,
+        "max_len": 20,
+        "min_len": 8,
+        "pause_chars": ["，", "。", "？", "！", "…"],
+        "split_prob": 0.4,
+        "short_pause": 200,
+        "long_pause": 500,
+        "long_pause_prob": 0.5,
+        "fade_duration": 100,
+        "emo_vector_adjustment": [-0.1, -0.1, 0.15, -0.05, 0.0, 0.15, -0.05, 0.15]
+    },
+    "不自然停顿": {
+        "speed_factor": 1.0,
+        "max_len": 16,
+        "min_len": 6,
+        "pause_chars": ["，", "。", "？", "！"],
+        "split_prob": 0.25,
+        "short_pause": 80,
+        "long_pause": 420,
+        "long_pause_prob": 0.22,
+        "fade_duration": 70,
+        "emo_vector_adjustment": [0.0, 0.0, 0.12, 0.05, 0.0, 0.05, 0.05, 0.0]
+        },
+    "忽快忽慢": {
+        "speed_factor": 1.0,
+        "max_len": 25,
+        "min_len": 10,
+        "pause_chars": ["，", "。", "？", "！", "…"],
+        "split_prob": 0.2,
+        "short_pause": 40,
+        "long_pause": 80,
+        "long_pause_prob": 0.15,
+        "fade_duration": 40,
+        "emo_vector_adjustment": [0.05, 0.05, 0.05, 0.1, 0.0, 0.05, 0.1, 0.0]
+    },
+    "正常": {
+        "speed_factor": 1.0,
+        "max_len": 28,
+        "min_len": 12,
+        "pause_chars": ["，", "。"],
+        "split_prob": 0.1,
+        "short_pause": 60,
+        "long_pause": 120,
+        "long_pause_prob": 0.08,
+        "fade_duration": 40,
+        "emo_vector_adjustment": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    }
+}

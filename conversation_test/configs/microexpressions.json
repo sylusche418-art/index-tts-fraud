@@ -1,0 +1,46 @@
+{
+  "正常": {},
+
+  "叹息": {
+    "sad": 0.08,
+    "melancholic": 0.10,
+    "calm": -0.05
+  },
+
+  "语调急剧升高": {
+    "surprised": 0.40,
+    "afraid": 0.15,
+    "happy": 0.50
+  },
+
+  "语调急剧降低": {
+    "sad": 0.41,
+    "melancholic": 0.10,
+    "happy": -0.15,
+    "angry": 0.05
+  },
+
+  "冷笑": {
+    "disgusted": 0.10,
+    "calm": -0.30,
+    "happy": -0.08
+  },
+
+  "倒吸气": {
+    "afraid": 0.12,
+    "surprised": 0.08,
+    "calm": -0.28
+  },
+
+  "哭腔": {
+    "sad": 0.15,
+    "melancholic": 0.10,
+    "calm": -0.06
+  },
+
+  "忽快忽慢": {
+    "surprised": 0.34,
+    "afraid": 0.28,
+    "calm": -0.37
+  }
+}
